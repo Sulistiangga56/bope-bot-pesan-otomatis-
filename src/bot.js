@@ -1,7 +1,7 @@
 require("dotenv").config();
 const baileys = require("@whiskeysockets/baileys");
 const { default: makeWASocket, useMultiFileAuthState } = baileys;
-
+const { setStatus } = require("../config/statusManager");
 const autoReply = require("./autoReply");
 const { setLastSender, setStartedByBot } = require("./conversationState");
 
@@ -11,6 +11,7 @@ async function startBot() {
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: true,
+        syncFullHistory: true,
         markOnlineOnConnect: false
     });
 
@@ -25,6 +26,32 @@ async function startBot() {
             msg.message.conversation ||
             msg.message.extendedTextMessage?.text ||
             "";
+
+        const sender = jid.replace("@s.whatsapp.net", "");
+
+        // Hanya kamu yang bisa mengubah status!
+        const OWNER = "6281380036932"; // nomor kamu
+
+        // ===========================================
+        // COMMAND: !sakit on/off, !cuti on/off
+        // ===========================================
+        if (sender === OWNER && text.startsWith("!")) {
+            
+            console.log("COMMAND DARI OWNER:", text);
+            const [cmd, mode] = text.slice(1).split(" ");
+            console.log("CMD =", cmd, "MODE =", mode);
+
+            if (["pagi", "istirahat", "siang", "pulang", "malam", "sakit", "cuti"].includes(cmd) && ["on", "off"].includes(mode)) {
+                const active = mode === "on";
+                setStatus(cmd, active);
+
+                await sock.sendMessage(jid, {
+                    text: `Rule *${cmd}* sekarang: *${active ? "AKTIF" : "NON-AKTIF"}*`
+                });
+
+                return;
+            }
+        }
 
         // ========================================
         // COMMAND DIPROSES DULU
@@ -43,8 +70,6 @@ async function startBot() {
         setLastSender(msg.key.remoteJid, "bot");
         return;
     }
-
-
         // ========================================
         // AUTO REPLY
         // ========================================

@@ -1,7 +1,7 @@
 const dayjs = require("dayjs");
 const isBetween = require("dayjs/plugin/isBetween");
 dayjs.extend(isBetween);
-
+const { isActive } = require("../config/statusManager");
 const rules = require("../config/rules.json");
 const { canReply } = require("./rateLimit");
 const { setLastSender, getLastSender, isExpired } = require("./conversationState");
@@ -42,6 +42,24 @@ module.exports = async function autoReply(sock, msg) {
         jid.includes("community")
     ) {
         return;
+    }
+
+    // PRIORITAS UTAMA: jika sakit aktif → balas pesan sakit
+    if (isActive("sakit")) {
+        const rule = rules.responses.find(r => r.id === "sakit");
+        if (rule) {
+            console.log("🤒 Mode SAKIT aktif → override semua rule");
+            return await sock.sendMessage(jid, { text: rule.message });
+        }
+    }
+
+    // PRIORITAS KEDUA: jika cuti aktif → balas pesan cuti
+    if (isActive("cuti")) {
+        const rule = rules.responses.find(r => r.id === "cuti");
+        if (rule) {
+            console.log("🏖️ Mode CUTI aktif → override semua rule");
+            return await sock.sendMessage(jid, { text: rule.message });
+        }
     }
 
     const sender = jid.replace("@s.whatsapp.net", "");
