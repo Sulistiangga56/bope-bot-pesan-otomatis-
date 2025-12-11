@@ -76,9 +76,26 @@ async function startBot() {
         autoReply(sock, msg);
     });
 
-    sock.ev.on('connection.update', ({ connection }) => {
-        if (connection === 'open') console.log("Bot sudah terhubung.");
-        if (connection === 'close') console.log("Koneksi terputus. Reconnect...");
+    sock.ev.on("connection.update", (update) => {
+        const { connection, lastDisconnect } = update;
+
+        if (connection === "open") {
+            console.log("Bot sudah terhubung.");
+        }
+
+        if (connection === "close") {
+            const reason = lastDisconnect?.error?.output?.statusCode;
+
+            console.log("Koneksi terputus. Reason:", reason);
+
+            // Auto reconnect kecuali logout dari perangkat
+            if (reason !== 401) {
+                console.log("Mencoba reconnect otomatis…");
+                startBot(); // panggil ulang
+            } else {
+                console.log("Session dihapus/Logout. Scan ulang QR.");
+            }
+        }
     });
 
     console.log("Bot siap menampilkan QR…");
