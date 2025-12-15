@@ -1,6 +1,8 @@
 require("dotenv").config();
 const baileys = require("@whiskeysockets/baileys");
-const { default: makeWASocket, useMultiFileAuthState } = baileys;
+const makeWASocket = baileys.default;
+const { useMultiFileAuthState } = baileys;
+const qrcode = require("qrcode-terminal");
 const { setStatus } = require("../config/statusManager");
 const autoReply = require("./autoReply");
 const { setLastSender, setStartedByBot } = require("./conversationState");
@@ -10,12 +12,36 @@ async function startBot() {
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true,
-        syncFullHistory: true,
+        browser: ["Chrome", "Windows", "10.0"], // stabil
+        syncFullHistory: false,
         markOnlineOnConnect: false
     });
 
     sock.ev.on("creds.update", saveCreds);
+
+    sock.ev.on("connection.update", ({ qr, connection, lastDisconnect }) => {
+        if (qr) {
+            console.log("Scan QR berikut:");
+            qrcode.generate(qr, { small: true });
+        }
+
+        if (connection === "open") {
+            console.log("Bot sudah terhubung.");
+        }
+
+        if (connection === "close") {
+            const reason = lastDisconnect?.error?.output?.statusCode;
+            console.log("Koneksi terputus. Reason:", reason);
+
+            // Auto reconnect kecuali logout dari perangkat
+            if (reason !== 401) {
+                console.log("Mencoba reconnect otomatis…");
+                startBot();
+            } else {
+                console.log("Session dihapus/Logout. Scan ulang QR.");
+            }
+        }
+    });
 
     sock.ev.on("messages.upsert", async ({ messages }) => {
         const msg = messages[0];
@@ -36,7 +62,6 @@ async function startBot() {
         // COMMAND: !sakit on/off, !cuti on/off
         // ===========================================
         if (sender === OWNER && text.startsWith("!")) {
-            
             console.log("COMMAND DARI OWNER:", text);
             const [cmd, mode] = text.slice(1).split(" ");
             console.log("CMD =", cmd, "MODE =", mode);
@@ -67,35 +92,13 @@ async function startBot() {
         // BARU CEK KALAU PESAN DARI BOT
         // ========================================
         if (msg.key.fromMe) {
-        setLastSender(msg.key.remoteJid, "bot");
-        return;
-    }
+            setLastSender(msg.key.remoteJid, "bot");
+            return;
+        }
         // ========================================
         // AUTO REPLY
         // ========================================
         autoReply(sock, msg);
-    });
-
-    sock.ev.on("connection.update", (update) => {
-        const { connection, lastDisconnect } = update;
-
-        if (connection === "open") {
-            console.log("Bot sudah terhubung.");
-        }
-
-        if (connection === "close") {
-            const reason = lastDisconnect?.error?.output?.statusCode;
-
-            console.log("Koneksi terputus. Reason:", reason);
-
-            // Auto reconnect kecuali logout dari perangkat
-            if (reason !== 401) {
-                console.log("Mencoba reconnect otomatis…");
-                startBot(); // panggil ulang
-            } else {
-                console.log("Session dihapus/Logout. Scan ulang QR.");
-            }
-        }
     });
 
     console.log("Bot siap menampilkan QR…");
