@@ -7,6 +7,10 @@ const { canReply } = require("./rateLimit");
 const { setLastSender, getLastSender, isExpired } = require("./conversationState");
 const { loadRules } = require("./utils/rulesManager");
 
+function normalizeJid(jid) {
+    return jid?.split(":")[0];
+}
+
 function isExcluded(jid) {
     const rules = loadRules();
     return rules.excludedJids?.includes(jid);
@@ -34,7 +38,10 @@ function findActiveResponse() {
 }
 
 module.exports = async function autoReply(sock, msg) {
-    const jid = msg.key.remoteJid;
+    // const jid = msg.key.remoteJid;
+    const rawJid = msg.key.remoteJid;
+    const jid = normalizeJid(rawJid);
+
 
     function getSender(msg) {
         return msg.key.participant
@@ -110,8 +117,6 @@ module.exports = async function autoReply(sock, msg) {
         console.log("⏰ State expired → auto-reply diaktifkan lagi");
     }
 
-    setLastSender(jid, "user");
-
     // ===============================
     // CEK TEKS PESAN
     // ===============================
@@ -146,14 +151,19 @@ module.exports = async function autoReply(sock, msg) {
     }
 
     // ===============================
-    // KIRIM AUTO-REPLY
-    // ===============================
-    const senderJid = msg.key.participant || msg.key.remoteJid;
-    if (isExcluded(senderJid)) {
+// KIRIM AUTO-REPLY (FINAL FIX)
+// ===============================
+// const senderJid = msg.key.participant || msg.key.remoteJid;
+const senderJid = normalizeJid(
+    msg.key.participant || msg.key.remoteJid
+);
+
+if (isExcluded(senderJid)) {
     console.log("🚫 JID DI-EXCLUDE:", senderJid);
     return;
-    }
-    const debugReport = `
+}
+
+const debugReport = `
 ✅ AUTO-REPLY TERKIRIM
 KE : ${senderJid}
 
@@ -161,26 +171,30 @@ KE : ${senderJid}
 JID     : ${jid}
 SENDER  : ${senderJid}
 
-✅ Nomor TIDAK termasuk excluded
-🧠 Last sender state: ${last}
+🧠 Last sender state SEBELUM: ${last}
 
 💬 Isi pesan:
 ${msgText}
 
-⏰ Rule aktif: ${dayjs().format("HH:mm")} (${reply ? "AKTIF" : "TIDAK AKTIF"})
+⏰ Rule aktif: ${dayjs().format("HH:mm")}
 `;
-    try {
-        const MY_JID = "6281380036932@s.whatsapp.net";
 
-        // ke user
-        await sock.sendMessage(jid, { text: reply });
+try {
+    const MY_JID = "6281380036932@s.whatsapp.net";
 
-        //ke dev
-        await sock.sendMessage(MY_JID, { text: debugReport });
-        console.log("✅ AUTO-REPLY TERKIRIM");
-        console.log("   KE :", sender);
+    // 👉 kirim ke user
+    await sock.sendMessage(jid, { text: reply });
 
-    } catch (err) {
-        console.log("❌ Gagal kirim auto reply:", err);
-    }
+    // 👉 PENTING: tandai BOT sebagai pengirim terakhir
+    setLastSender(jid, "bot");
+
+    // 👉 kirim debug ke dev
+    await sock.sendMessage(MY_JID, { text: debugReport });
+
+    console.log("✅ AUTO-REPLY TERKIRIM");
+    console.log("   KE :", sender);
+
+} catch (err) {
+    console.log("❌ Gagal kirim auto reply:", err);
+}
 };

@@ -5,6 +5,7 @@ const { useMultiFileAuthState } = baileys;
 const qrcode = require("qrcode-terminal");
 const { setStatus } = require("../config/statusManager");
 const autoReply = require("./autoReply");
+const sendBotMessage = require("./sendBotMessage");
 const { setLastSender, setStartedByBot } = require("./conversationState");
 
 async function startBot() {
@@ -80,11 +81,11 @@ async function startBot() {
             const list = listExcludedJids();
 
             if (list.length === 0) {
-                await sock.sendMessage(jid, { text: "📭 Excluded list kosong." });
+                await sendBotMessage(sock, jid, { text: "📭 Excluded list kosong." });
                 return;
             }
 
-            await sock.sendMessage(jid, {
+            await sendBotMessage(sock, jid, {
                 text:
                     "🚫 *DAFTAR EXCLUDED JID*\n\n" +
                     list.map((j, i) => `${i + 1}. ${j}`).join("\n")
@@ -97,7 +98,7 @@ async function startBot() {
         // ===============================
         if (args[1] === "reset") {
             resetExcludedJids();
-            await sock.sendMessage(jid, {
+            await sendBotMessage(sock, jid, {
                 text: "♻️ Semua excluded JID berhasil dihapus."
             });
             return;
@@ -112,13 +113,13 @@ async function startBot() {
             const result = addExcludedJid(target);
 
             if (!result.success) {
-                await sock.sendMessage(jid, {
+                await sendBotMessage(sock, jid, {
                     text: `⚠️ JID sudah ada:\n${target}`
                 });
                 return;
             }
 
-            await sock.sendMessage(jid, {
+            await sendBotMessage(sock, jid, {
                 text: `✅ JID berhasil di-exclude:\n${target}`
             });
             return;
@@ -132,13 +133,13 @@ async function startBot() {
             const result = removeExcludedJid(target);
 
             if (!result.success) {
-                await sock.sendMessage(jid, {
+                await sendBotMessage(sock, jid, {
                     text: `❌ JID tidak ditemukan:\n${target}`
                 });
                 return;
             }
 
-            await sock.sendMessage(jid, {
+            await sendBotMessage(sock, jid, {
                 text: `✅ JID berhasil dihapus dari exclude:\n${target}`
             });
             return;
@@ -147,7 +148,7 @@ async function startBot() {
         // ===============================
         // HELP
         // ===============================
-        await sock.sendMessage(jid, {
+        await sendBotMessage(sock, jid, {
             text:
     `📌 *EXCLUDE COMMAND*
     !exclude add <jid>
@@ -170,7 +171,7 @@ async function startBot() {
                 const active = mode === "on";
                 setStatus(cmd, active);
 
-                await sock.sendMessage(jid, {
+                await sendBotMessage(sock, jid, {
                     text: `Rule *${cmd}* sekarang: *${active ? "AKTIF" : "NON-AKTIF"}*`
                 });
 
@@ -184,7 +185,7 @@ async function startBot() {
         if (text.startsWith("!start ")) {
             const target = text.split(" ")[1] + "@s.whatsapp.net";
             setStartedByBot(target);
-            await sock.sendMessage(jid, { text: `State saved. Bot dianggap MEMULAI chat dengan ${target}` });
+            await sendBotMessage(sock, jid, { text: `State saved. Bot dianggap MEMULAI chat dengan ${target}` });
             return;
         }
 
