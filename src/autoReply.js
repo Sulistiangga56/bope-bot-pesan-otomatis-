@@ -20,6 +20,8 @@ function findActiveResponse() {
     const now = dayjs();
 
     for (let rule of rules.responses) {
+        if (!isActive(rule.id)) continue;
+        
         const today = dayjs().format("YYYY-MM-DD");
 
         const start = dayjs(`${today} ${rule.start}`, "YYYY-MM-DD HH:mm");
