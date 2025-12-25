@@ -17,7 +17,7 @@ const DEV_MODE = true;
 
 // ================= HELPERS =================
 function getConversationJid(msg) {
-  return (msg.key.participant || msg.key.remoteJid)?.split(":")[0];
+  return msg.key.remoteJid;
 }
 
 function getSender(msg) {
@@ -71,8 +71,16 @@ module.exports = async function autoReply(sock, msg) {
     if (
       jid.endsWith("@g.us") ||
       jid.includes("@broadcast") ||
-      jid.includes("@newsletter")
+      jid.includes("@newsletter") ||
+      jid.includes("community")
     ) return;
+
+    const isPrivateChat = jid.endsWith("@s.whatsapp.net") || jid.endsWith("@lid");
+
+    if (!isPrivateChat) {
+      console.log("⛔ Non-private chat ignored:", jid);
+      return;
+    }
 
     if (isExcluded(jid)) return;
 
