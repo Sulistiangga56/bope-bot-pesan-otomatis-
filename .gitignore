@@ -4,3 +4,6 @@ auth/
 config/
 conversationState.json
 backup-auth/
+bope.rar
+silent-start.vbs
+startup-npm.bat

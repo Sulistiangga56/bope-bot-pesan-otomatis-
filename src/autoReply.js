@@ -12,13 +12,23 @@ const {
 } = require("./conversationState");
 const { loadRules } = require("./utils/rulesManager");
 
+const MY_JID = "6281380036932@s.whatsapp.net";
+const DEV_MODE = true;
+
+// ================= HELPERS =================
 function getConversationJid(msg) {
   return (msg.key.participant || msg.key.remoteJid)?.split(":")[0];
 }
 
+function getSender(msg) {
+  return msg.key.participant
+    ? msg.key.participant.replace("@s.whatsapp.net", "")
+    : msg.key.remoteJid.replace("@s.whatsapp.net", "");
+}
+
 function isExcluded(jid) {
-  const rules = loadRules();
-  return rules.excludedJids?.includes(jid);
+  const cfg = loadRules();
+  return cfg.excludedJids?.includes(jid);
 }
 
 function findActiveResponse() {
@@ -26,6 +36,7 @@ function findActiveResponse() {
 
   for (let rule of rules.responses) {
     if (!isActive(rule.id)) continue;
+    if (!rule.start || !rule.end) continue;
 
     const today = dayjs().format("YYYY-MM-DD");
     const start = dayjs(`${today} ${rule.start}`, "YYYY-MM-DD HH:mm");
@@ -34,149 +45,96 @@ function findActiveResponse() {
     if (end.isBefore(start)) end = end.add(1, "day");
 
     if (now.isAfter(start) && now.isBefore(end)) {
-      console.log(`⏰ Rule aktif: ${rule.id}`);
-      return rule.message;
+      return rule;
     }
   }
-
-  console.log("⚠ Tidak ada rule yang aktif saat ini.");
   return null;
 }
 
+// ================= AUTO REPLY =================
 module.exports = async function autoReply(sock, msg) {
-  const jid = getConversationJid(msg);
-
-  function getSender(msg) {
-    return msg.key.participant
-      ? msg.key.participant.replace("@s.whatsapp.net", "")
-      : msg.key.remoteJid.replace("@s.whatsapp.net", "");
-  }
-
-  const sender = getSender(msg);
-
-  console.log("📥 PESAN MASUK");
-  console.log("   JID     :", jid);
-  console.log("   SENDER  :", sender);
-
-  // FILTER GROUP / BROADCAST
-  if (
-    jid.endsWith("@g.us") ||
-    jid.includes("@broadcast") ||
-    jid.includes("@newsletter") ||
-    jid.includes("community")
-  ) {
-    console.log("⛔ Pesan dari group/broadcast → DIABAIKAN");
-    return;
-  }
-
-  // DEBUG EXCLUDED
-  if (isExcluded(jid)) {
-    console.log("🚫 NOMOR TERMASUK EXCLUDED");
-    console.log("   BLOCK AUTO-REPLY UNTUK:", sender);
-    return;
-  } else {
-    console.log("✅ Nomor TIDAK termasuk excluded");
-  }
-
-  // PRIORITAS STATUS
-  if (isActive("sakit")) {
-    console.log("🤒 Mode SAKIT aktif");
-    const rule = rules.responses.find((r) => r.id === "sakit");
-    if (rule) {
-      await sock.sendMessage(jid, { text: rule.message });
-      console.log("📤 Auto-reply SAKIT terkirim ke", sender);
-    }
-    return;
-  }
-
-  if (isActive("cuti")) {
-    console.log("🏖️ Mode CUTI aktif");
-    const rule = rules.responses.find((r) => r.id === "cuti");
-    if (rule) {
-      await sock.sendMessage(jid, { text: rule.message });
-      console.log("📤 Auto-reply CUTI terkirim ke", sender);
-    }
-    return;
-  }
-
-  // CEK STATE PERCAKAPAN
-  const last = getLastSender(jid);
-  console.log("🧠 Last sender state:", last);
-
-  if (last === "bot" && !isExpired(jid)) {
-    console.log("⛔ Bot masih dianggap memulai (belum expired)");
-    return;
-  }
-
-  if (isExpired(jid)) {
-    console.log("⏰ State expired → auto-reply diaktifkan lagi");
-  }
-
-  // CEK TEKS PESAN
-  const msgText =
-    msg.message?.conversation || msg.message?.extendedTextMessage?.text || null;
-
-  if (!msgText) {
-    console.log("⚠ Pesan tanpa teks → DIABAIKAN");
-    return;
-  }
-
-  console.log("💬 Isi pesan:", msgText);
-
-  // CEK RULE AKTIF
-  const reply = findActiveResponse();
-
-  if (!reply) {
-    console.log("⚠ Tidak ada rule aktif saat ini");
-    return;
-  }
-
-  // RATE LIMIT
-  if (!canReply(sender)) {
-    console.log("⛔ Rate limit aktif untuk", sender);
-    return;
-  }
-
-  // KIRIM AUTO-REPLY (FINAL FIX)
-  const senderJid = jid;
-
-  if (isExcluded(senderJid)) {
-    console.log("🚫 JID DI-EXCLUDE:", senderJid);
-    return;
-  }
-
-  const debugReport = `
-✅ AUTO-REPLY TERKIRIM
-KE : ${senderJid}
-
-📥 PESAN MASUK
-JID     : ${jid}
-SENDER  : ${senderJid}
-
-🧠 Last sender state SEBELUM: ${last}
-
-💬 Isi pesan:
-${msgText}
-
-⏰ Rule aktif: ${dayjs().format("HH:mm")}
-`;
-
   try {
-    const MY_JID = "6281380036932@s.whatsapp.net";
+    // ===== GUARD =====
+    if (!msg?.message) return;
+    if (msg.key?.fromMe) return;
+    if (msg.message.protocolMessage) return;
+    if (msg.message.historySyncNotification) return;
 
-    // kirim ke user
-    await sock.sendMessage(jid, { text: reply });
+    if (msg.messageTimestamp) {
+      const msgTime = Number(msg.messageTimestamp) * 1000;
+      if (Date.now() - msgTime > 10_000) return;
+    }
 
-    // tandai BOT sebagai pengirim terakhir
+    const jid = getConversationJid(msg);
+    const sender = getSender(msg);
+
+    if (
+      jid.endsWith("@g.us") ||
+      jid.includes("@broadcast") ||
+      jid.includes("@newsletter")
+    ) return;
+
+    if (isExcluded(jid)) return;
+
+    const text =
+      msg.message.conversation ||
+      msg.message.extendedTextMessage?.text;
+
+    if (!text) return;
+
+    const last = getLastSender(jid);
+
+    // ===== PRIORITAS SAKIT =====
+    if (isActive("sakit")) {
+      if (last === "bot" && !isExpired(jid)) return;
+
+      const rule = rules.responses.find(r => r.id === "sakit");
+      if (!rule) return;
+
+      await sock.sendMessage(jid, { text: rule.message });
+      setLastSender(jid, "bot");
+
+      if (DEV_MODE) {
+        await sock.sendMessage(MY_JID, {
+          text: `🤒 SAKIT\nJID: ${jid}\nTEXT: ${text}`
+        });
+      }
+      return;
+    }
+
+    // ===== STATE =====
+    if (last === "bot" && !isExpired(jid)) return;
+    if (!canReply(sender)) return;
+
+    const rule = findActiveResponse();
+    if (!rule) return;
+
+    // ===== SEND USER =====
+    await sock.sendMessage(jid, { text: rule.message });
     setLastSender(jid, "bot");
 
-    // kirim debug ke dev
-    await sock.sendMessage(MY_JID, { text: debugReport });
-    console.log("🔑 STATE KEY DIGUNAKAN:", jid);
+    // ===== DEBUG (AMAN) =====
+    if (DEV_MODE) {
+      const debugReport = `
+✅ AUTO-REPLY
+KE : ${jid}
 
-    console.log("✅ AUTO-REPLY TERKIRIM");
-    console.log("   KE :", sender);
+🧠 Last: ${last}
+💬 Pesan:
+${text}
+
+⏰ ${dayjs().format("HH:mm")}
+`;
+      try {
+        await sock.sendMessage(MY_JID, { text: debugReport });
+      } catch (_) {
+        // debug gagal TIDAK BOLEH bunuh bot
+      }
+    }
+
+    console.log("✅ AUTO-REPLY terkirim ke", sender);
+
   } catch (err) {
-    console.log("❌ Gagal kirim auto reply:", err);
+    console.error("❌ autoReply error:", err);
   }
 };
